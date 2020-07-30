@@ -13,6 +13,8 @@ import volmdlr as vm
 import volmdlr.primitives3D as p3D
 from copy import copy
 
+from typing import List
+
 # Definition of equivalent L/D values
 # Lists in increasing order
 ben_angle = [0, 45, 90, 180, 360]
@@ -30,19 +32,21 @@ class StraightPipe:
     Abstract Class
     Straight pipes linking 2 points
     """
-    def __init__(self, p1, p2, d, heat_exchange=True, name=''):
-        self.points = [p1, p2]
+    def __init__(self, point1, point2, diameter:float,
+                 heat_exchange:bool=True, name:str=''):
+        self.points = [point1, point2]
         self.active_points = self.points
         self.heat_exchange = heat_exchange
-        self.radius = d/2
+        self.radius = diameter/2
         self.surf = math.pi*self.radius**2
-        self.length = p1.PointDistance(p2)
+        self.length = point1.point_distance(point2)
         self.fQ = 16*self.length/(math.pi*self.radius**4)
         self.n_equations = 2
         self.name = name
 
     def __str__(self):
-        return "{} from {} to {}".format(self.__class__.__name__, self.points[0], self.points[1])
+        # return "{} from {} to {}".format(self.__class__.__name__, self.points[0], self.points[1])
+        return 'Straight pipe'
 
     def SystemMatrix(self, constant):
         system_matrix = npy.array([[-constant, self.fQ, constant, 0],
@@ -65,42 +69,52 @@ class StraightPipe2D(StraightPipe):
     """
     Straight pipes linking 2 2D points
     """
-    def __init__(self, p1, p2, d, heat_exchange=True, name=''):
-        StraightPipe.__init__(self, p1, p2, d, heat_exchange, name)
+    def __init__(self, point1:vm.Point2D, point2:vm.Point2D, diameter:float,
+                 heat_exchange:bool=True, name:str=''):
+        StraightPipe.__init__(self, point1, point2, diameter, heat_exchange,
+                              name=name)
 
-    def Draw(self, ax=None):
+    def plot(self, ax=None):
         if ax is None:
             fig = plt.figure()
             ax = fig.add_subplot(111)
 
-        vm.LineSegment2D(*self.points).MPLPlot(ax)
+        ax = vm.LineSegment2D(*self.points).MPLPlot(ax)
+        return ax
 
 class StraightPipe3D(StraightPipe):
     """
     Straight pipes linking 2 3D points
     """
-    def __init__(self, p1, p2, d, heat_exchange=True, name=''):
-        StraightPipe.__init__(self, p1, p2, d, heat_exchange, name)
+    def __init__(self, point1:vm.Point3D, point2:vm.Point3D, diameter:float,
+                 heat_exchange:bool=True, name:str=''):
+        StraightPipe.__init__(self, point1, point2, diameter, heat_exchange,
+                              name=name)
 
-    def Draw(self, x3D, y3D, ax=None):
+    def plot2d(self, x3D, y3D, ax=None):
         if ax is None:
             fig = plt.figure()
             ax = fig.add_subplot(111)
 
         vm.LineSegment3D(*self.points).MPLPlot2D(x3D, y3D, ax)
+        return ax
 
-    def CADVolume(self):
+    def plot(self, ax=None):
+        ax = vm.LineSegment3D(*self.points).MPLPlot(ax=ax)
+        return ax
+
+    def volmdlr_primitives(self):
         axis = self.points[1] - self.points[0]
         axis.Normalize()
-        return p3D.HollowCylinder(0.5*(self.points[0] + self.points[1]), axis,
+        return [p3D.HollowCylinder(0.5*(self.points[0] + self.points[1]), axis,
                                   self.radius, self.radius + 0.001,
                                   self.length,
-                                  name=self.name)
+                                  name=self.name)]
 
     @classmethod
-    def DictToObject(cls, dict_):
-        p1 = vm.Point3D.DictToObject(dict_['p1'])
-        p2 = vm.Point3D.DictToObject(dict_['p2'])
+    def dict_to_object(cls, dict_):
+        p1 = vm.Point3D.dict_to_object(dict_['p1'])
+        p2 = vm.Point3D.dict_to_object(dict_['p2'])
         d = dict_['d']
         heat_exchange = dict_['heat_exchange']
         name = dict_['name']
@@ -206,16 +220,16 @@ class Bend3D(Bend):
 
         self.arc.MPLPlot2D(x3D, y3D, ax)
 
-    def CADVolume(self):
+    def volmdlr_primitives(self):
         normal_section = (self.arc.start - self.arc.center).Cross(self.arc.normal)
         section = vm.Contour3D([vm.Circle3D(self.arc.start, self.radius+0.001, normal_section)])
         return p3D.Sweep(section, vm.Wire3D([self.arc]))
 
     @classmethod
-    def DictToObject(cls, dict_):
-        p1 = vm.Point3D.DictToObject(dict_['p1'])
-        p = vm.Point3D.DictToObject(dict_['p'])
-        p2 = vm.Point3D.DictToObject(dict_['p2'])
+    def dict_to_object(cls, dict_):
+        p1 = vm.Point3D.dict_to_object(dict_['p1'])
+        p = vm.Point3D.dict_to_object(dict_['p'])
+        p2 = vm.Point3D.dict_to_object(dict_['p2'])
         d = dict_['d']
         heat_exchange = dict_['heat_exchange']
         name = dict_['name']
@@ -322,15 +336,15 @@ class UserDefined(SingularPipe):
                                    [0, 1, 0, 1]])
         return system_matrix
         
-    def CADVolume(self):
+    def volmdlr_primitives(self):
         axis = self.points[1] - self.points[0]
         l = axis.Norm()
         axis.Normalize()
         
-        return p3D.HollowCylinder(0.5*(self.points[0] + self.points[1]), axis,
+        return [p3D.HollowCylinder(0.5*(self.points[0] + self.points[1]), axis,
                                   0.001, 0.002,
                                   l,
-                                  name=self.name)
+                                  name=self.name)]
 
     def Repr1D(self, j, points_index):
         # Returns the 1D representation of the pipe for gmsh
@@ -353,9 +367,9 @@ class UserDefined(SingularPipe):
         return d
     
     @classmethod
-    def DictToObject(cls, dict_):
-        p1 = vm.Point3D.DictToObject(dict_['p1'])
-        p2 = vm.Point3D.DictToObject(dict_['p2'])
+    def dict_to_object(cls, dict_):
+        p1 = vm.Point3D.dict_to_object(dict_['p1'])
+        p2 = vm.Point3D.dict_to_object(dict_['p2'])
         fQ = dict_['fQ']
         heat_exchange = dict_['heat_exchange']
         name = dict_['name']
@@ -367,14 +381,15 @@ class JunctionPipe:
     Add pressure drop values
     junction linking 1 pipe to 2+ pipes
     """
-    def __init__(self, central_point, other_points, diameter, name=''):
+    def __init__(self, central_point:vm.Point3D, other_points:List[vm.Point3D],
+                 diameter:float, name:str=''):
         self.points = [central_point] + other_points
         self.active_points = other_points
         self.central_point = central_point
         self.heat_exchange = False
         self.radius = diameter/2
         self.surf = math.pi*self.radius**2
-        self.lengths = [point.PointDistance(central_point) for point in other_points]
+        self.lengths = [point.point_distance(central_point) for point in other_points]
         self.n_equations = 1 + len(self.active_points)
         self.name = name
 
@@ -384,7 +399,8 @@ class JunctionPipe:
 
 
     def __str__(self):
-        return "{}-jun-{}".format(self.central_point, len(self.active_points))
+        # return "{}-jun-{}".format(self.central_point, len(self.active_points))
+        return 'Junction'
 
     def SystemMatrix(self, constant):
         """
@@ -403,19 +419,40 @@ class JunctionPipe:
         system_matrix = npy.array(matrix_generator)
         return system_matrix
 
-    def Draw(self, x3D=vm.x3D, y3D=vm.y3D, ax=None):
+    def plot2d(self, x3D=vm.X3D, y3D=vm.Y3D, ax=None):
         if ax is None:
             fig = plt.figure()
             ax = fig.add_subplot(111)
 
         for point in self.active_points:
             vm.LineSegment2D(point, self.central_point).MPLPlot(ax)
+        return ax
+
+    def plot(self, ax=None):
+        
+        ax = vm.LineSegment3D(self.active_points[0], self.central_point).MPLPlot(ax=ax)
+        
+        for point in self.active_points[1:]:
+            vm.LineSegment3D(point, self.central_point).MPLPlot(ax)
+        return ax
 
     def Repr1D(self, j, points_index):
         # Returns the 1D representation of the pipe for gmsh
         line = "Line({}) = [{},{}];\n".format(j, points_index[self.active_points[0]],
                                               points_index[self.active_points[1]])
         return(line, [j])
+    
+    def volmdlr_primitives(self):
+        primitives = []
+        for point in self.active_points:
+            axis = point - self.central_point
+            axis.Normalize()
+            length = point.point_distance(self.central_point)
+            primitives.append(p3D.HollowCylinder(0.5*(self.central_point + point), axis,
+                                                 self.radius, self.radius + 0.001,
+                                                 length,
+                                                 name=self.name))
+        return primitives
 
 VM_EQUIVALENCES = {vm.LineSegment2D: (StraightPipe2D, (('points', 0), ('points', 1))),
                    vm.Arc2D: (Bend2D, (('start', None), ('interior', None), ('end', None))),
